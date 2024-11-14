@@ -25,6 +25,151 @@ import com.juraj.agsl.ui.theme.AGSLShadersTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private const val SNOW_SHADER_SRC = """
+uniform float2 size;
+uniform float time;
+uniform shader composable;
+float rotationAngle = 0.0;
+
+float2 mod289(float2 x) {
+    return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+float3 mod289(float3 x) {
+    return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+float4 mod289(float4 x) {
+    return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+float3 permute(float3 x) {
+    return mod289(((x * 34.0) + 1.0) * x);
+}
+
+float4 permute(float4 x) {
+    return mod((34.0 * x + 1.0) * x, 289.0);
+}
+
+float4 taylorInvSqrt(float4 r) {
+    return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+float snoise(float2 v) {
+    const float4 C = float4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+    float2 i = floor(v + dot(v, C.yy));
+    float2 x0 = v - i + dot(i, C.xx);
+
+    float2 i1 = x0.x > x0.y ? float2(1.0, 0.0) : float2(0.0, 1.0);
+    float4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+
+    i = mod289(i);
+    float3 p = permute(permute(i.y + float3(0.0, i1.y, 1.0)) + i.x + float3(0.0, i1.x, 1.0));
+
+    float3 m = max(0.5 - float3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
+    m = m * m;
+    m = m * m;
+
+    float3 x = 2.0 * fract(p * C.www) - 1.0;
+    float3 h = abs(x) - 0.5;
+    float3 ox = floor(x + 0.5);
+    float3 a0 = x - ox;
+
+    m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+
+    float3 g;
+    g.x = a0.x * x0.x + h.x * x0.y;
+    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+
+    return 130.0 * dot(m, g);
+}
+
+float cellular2x2(float2 P) {
+    const float K = 0.142857142857;
+    const float K2 = 0.0714285714285;
+    const float jitter = 0.8;
+
+    float2 Pi = mod(floor(P), 289.0);
+    float2 Pf = fract(P);
+    float4 Pfx = Pf.x + float4(-0.5, -1.5, -0.5, -1.5);
+    float4 Pfy = Pf.y + float4(-0.5, -0.5, -1.5, -1.5);
+    float4 p = permute(Pi.x + float4(0.0, 1.0, 0.0, 1.0));
+    p = permute(p + Pi.y + float4(0.0, 0.0, 1.0, 1.0));
+    float4 ox = mod(p, 7.0) * K + K2;
+    float4 oy = mod(floor(p * K), 7.0) * K + K2;
+    float4 dx = Pfx + jitter * ox;
+    float4 dy = Pfy + jitter * oy;
+    float4 d = dx * dx + dy * dy;
+
+    d.xy = min(d.xy, d.zw);
+    d.x = min(d.x, d.y);
+    return d.x;
+}
+
+float fbm(float2 p) {
+    float f = 0.0;
+    float w = 0.5;
+    for (int i = 0; i < 5; i++) {
+        f += w * snoise(p);
+        p *= 2.0;
+        w *= 0.5;
+    }
+    return f;
+}
+
+float2 rotate(float2 uv, float angle) {
+    float cosAngle = cos(angle);
+    float sinAngle = sin(angle);
+    float2x2 rotationMatrix = float2x2(cosAngle, -sinAngle, sinAngle, cosAngle);
+    return rotationMatrix * uv;
+}
+
+half4 main(float2 fragCoord) {
+    // Get background color
+    half4 baseColor = composable.eval(fragCoord);
+    
+    float speed = 2.0;
+
+    float2 uv = fragCoord.xy / size.xy;
+    uv.x *= (size.x / size.y);
+    uv = rotate(uv, rotationAngle);
+
+    float2 GA;
+    GA.x = 0.0;
+    GA.y -= time * 1.25;
+    GA *= speed;
+
+    float F1, F2, F3, F4, F5, N1, N2, N3, N4, N5;
+
+    F1 = 1.0 - cellular2x2((uv + (GA * 0.1)) * 8.0);
+    N1 = smoothstep(0.998, 1.0, F1);
+
+    F2 = 1.0 - cellular2x2((uv + (GA * 0.2)) * 6.0);
+    N2 = smoothstep(0.995, 1.0, F2) * 0.85;
+
+    F3 = 1.0 - cellular2x2((uv + (GA * 0.4)) * 4.0);
+    N3 = smoothstep(0.99, 1.0, F3) * 0.65;
+
+    F4 = 1.0 - cellular2x2((uv + (GA * 0.6)) * 3.0);
+    N4 = smoothstep(0.98, 1.0, F4) * 0.4;
+
+    F5 = 1.0 - cellular2x2((uv + GA) * 1.2);
+    N5 = smoothstep(0.98, 1.0, F5) * 0.25;
+
+    float Snowout = N1 + N2 + N3 + N4 + N5;
+    Snowout = clamp(Snowout, 0.0, 1.0);
+
+    // Mix the snowflake effect smoothly into the background
+    return half4(
+        mix(baseColor.r, 1.0, Snowout),
+        mix(baseColor.g, 1.0, Snowout),
+        mix(baseColor.b, 1.0, Snowout),
+        baseColor.a
+    );
+}
+"""
+
 private const val IMG_SHADER_SRC = """
     uniform float2 size;
     uniform float time;
@@ -185,10 +330,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        val shader = RuntimeShader(IMG_SHADER_SRC)
+        val shader = RuntimeShader(SNOW_SHADER_SRC)
+//        val shader = RuntimeShader(IMG_SHADER_SRC)
 //        val shader = RuntimeShader(FRACTAL_SHADER_SRC) // TODO: uncomment to see 2nd shader
 //        val shader = RuntimeShader(CLOUD_SHADER_SRC) // TODO: uncomment to see 3rd shader
-        val photo = BitmapFactory.decodeResource(resources, R.drawable.butterfly)
+        val photo = BitmapFactory.decodeResource(resources, R.drawable.map)
 
         setContent {
             val scope = rememberCoroutineScope()
@@ -221,7 +367,7 @@ class MainActivity : ComponentActivity() {
                             }
                             .graphicsLayer {
                                 clip = true
-                                shader.setFloatUniform("time",timeMs.value)
+                                shader.setFloatUniform("time", timeMs.value)
                                 renderEffect =
                                     RenderEffect
                                         .createRuntimeShaderEffect(shader, "composable")
