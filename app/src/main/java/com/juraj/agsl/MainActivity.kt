@@ -7,19 +7,28 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.juraj.agsl.ui.theme.AGSLShadersTheme
 import kotlinx.coroutines.delay
@@ -170,7 +179,7 @@ half4 main(float2 fragCoord) {
 }
 """
 
-private const val IMG_SHADER_SRC = """
+val rippleShader = """
     uniform float2 size;
     uniform float time;
     uniform shader composable;
@@ -186,7 +195,7 @@ private const val IMG_SHADER_SRC = """
         float2 textCoord = scaledCoord + offset / 30;
         return composable.eval(textCoord / scale);
     }
-"""
+""".trimIndent()
 
 private const val FRACTAL_SHADER_SRC = """
     uniform float2 size;
@@ -330,11 +339,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        val shader = RuntimeShader(SNOW_SHADER_SRC)
-//        val shader = RuntimeShader(IMG_SHADER_SRC)
+//        val shader = RuntimeShader(SNOW_SHADER_SRC)
+        val shader = RuntimeShader(rippleShader)
 //        val shader = RuntimeShader(FRACTAL_SHADER_SRC) // TODO: uncomment to see 2nd shader
 //        val shader = RuntimeShader(CLOUD_SHADER_SRC) // TODO: uncomment to see 3rd shader
-        val photo = BitmapFactory.decodeResource(resources, R.drawable.map)
+//        val photo = BitmapFactory.decodeResource(resources, R.drawable.map)
+//        val photo = BitmapFactory.decodeResource(resources, R.drawable.butterfly)
+        val photo = BitmapFactory.decodeResource(resources, R.drawable.moon)
 
         setContent {
             val scope = rememberCoroutineScope()
@@ -350,31 +361,47 @@ class MainActivity : ComponentActivity() {
 
             AGSLShadersTheme {
                 // A surface container using the 'background' color from the theme
-                Surface(
+                Box(
                     modifier = Modifier
-                        .fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                        .fillMaxSize()
                 ) {
-                    Image(
-                        bitmap = photo.asImageBitmap(),
+                    Surface(
                         modifier = Modifier
-                            .onSizeChanged { size ->
-                                shader.setFloatUniform(
-                                    "size",
-                                    size.width.toFloat(),
-                                    size.height.toFloat()
-                                )
-                            }
-                            .graphicsLayer {
-                                clip = true
-                                shader.setFloatUniform("time", timeMs.value)
-                                renderEffect =
-                                    RenderEffect
-                                        .createRuntimeShaderEffect(shader, "composable")
-                                        .asComposeRenderEffect()
-                            },
-                        contentScale = ContentScale.FillHeight,
-                        contentDescription = null,
+//                        .aspectRatio(1f)
+                            .fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        Image(
+                            bitmap = photo.asImageBitmap(),
+                            modifier = Modifier
+                                .onSizeChanged { size ->
+                                    shader.setFloatUniform(
+                                        "size",
+                                        size.width.toFloat(),
+                                        size.height.toFloat()
+                                    )
+                                }
+                                .graphicsLayer {
+                                    clip = true
+                                    shader.setFloatUniform("time", timeMs.value)
+                                    renderEffect =
+                                        RenderEffect
+                                            .createRuntimeShaderEffect(shader, "composable")
+                                            .asComposeRenderEffect()
+                                },
+                            contentScale = ContentScale.FillHeight,
+                            contentDescription = null,
+                        )
+                    }
+
+                    Text(
+                        text = "@Techblog_AGSL",
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .offset(y = (LocalConfiguration.current.screenHeightDp * 0.975f).dp),
+                        color = Color.LightGray,
+                        textAlign = TextAlign.Center,
+                        fontSize = 10.sp
                     )
                 }
 
